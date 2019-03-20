@@ -3,6 +3,7 @@
 #include "io.h"
 #include "configfile.h"
 #include "CLI11.hpp"
+#include "wraplammps.h"
 #include <QApplication>
 #include <QCommandLineParser>
 #include <QSurfaceFormat>
@@ -33,6 +34,10 @@ int main(int argc, char *argv[])
 {
     // main parser + data-targets
     Vipster::readConfig();
+    if(argc==2 && !strcmp(argv[1], "__LMP__")){
+        launchLammps();
+        return 0;
+    }
     CLI::App app{"Vipster v" VIPSTER_VERSION "b"};
     app.allow_extras(true);
     std::map<IOFmt, std::vector<std::string>> fmt_files{};

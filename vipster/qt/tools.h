@@ -9,6 +9,9 @@
 #include "tools/pickwidget.h"
 #include "tools/pinwidget.h"
 #include "tools/scriptwidget.h"
+#ifdef VIPSTER_LAMMPS
+#include "tools/lammpswidget.h"
+#endif
 
 std::vector<std::pair<BaseWidget*, QString>> makeToolWidgets(QWidget* parent)
 {
@@ -19,6 +22,9 @@ std::vector<std::pair<BaseWidget*, QString>> makeToolWidgets(QWidget* parent)
         {new PinWidget(parent), "Pin Steps"},
         {new CellModWidget(parent), "Modify Cell"},
         {new ScriptWidget(parent), "Script"},
+#ifdef VIPSTER_LAMMPS
+        {new LammpsWidget(parent), "LAMMPS"}
+#endif
     };
 }
 

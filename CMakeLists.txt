@@ -2,11 +2,12 @@ cmake_minimum_required(VERSION 3.9)
 
 project(Vipster VERSION 1.15)
 
-option(TESTS "Build tests" OFF)
-option(DESKTOP "Build QT-based desktop app" OFF)
+option(VIPSTER_TESTS "Build tests" OFF)
+option(VIPSTER_DESKTOP "Build QT-based desktop app" ON)
 include(CMakeDependentOption)
-cmake_dependent_option(WEB "Build WASM-Module" OFF "NOT DESKTOP" OFF)
-cmake_dependent_option(PYTHON "Python bindings" OFF "NOT WEB" OFF)
+cmake_dependent_option(VIPSTER_LAMMPS "Build LAMMPS-Interface" OFF "VIPSTER_DESKTOP" OFF)
+cmake_dependent_option(VIPSTER_WEB "Build WASM-Module" OFF "NOT VIPSTER_DESKTOP" OFF)
+cmake_dependent_option(VIPSTER_PYTHON "Python bindings" OFF "NOT VIPSTER_WEB" OFF)
 
 set(CMAKE_CXX_STANDARD 17)
 
@@ -41,7 +42,7 @@ if(UNIX AND NOT APPLE)
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/version.h DESTINATION "include/vipster")
 endif()
 
-if(TESTS)
+if(VIPSTER_TESTS)
     # Tests, so far only for library
     enable_testing()
     file(GLOB TEST_SOURCES "tests/*.cpp")
@@ -50,9 +51,12 @@ if(TESTS)
     add_test(NAME test_lib COMMAND $<TARGET_FILE:test_lib>)
 endif()
 
-if(PYTHON)
+if(VIPSTER_PYTHON)
     # Python-bindings
-    add_subdirectory(external/pybind11)
+    find_package(pybind11 CONFIG REQUIRED)
+    if(NOT pybind11_FOUND)
+        add_subdirectory(external/pybind11)
+    endif()
     pybind11_add_module(pyvipster ${PY_SOURCES})
     set_target_properties(pyvipster PROPERTIES OUTPUT_NAME vipster)
     target_link_libraries(pyvipster PRIVATE libvipster)
@@ -67,7 +71,7 @@ print(s.get_python_lib(plat_specific=True,standard_lib=False))"
     endif()
 endif()
 
-if(DESKTOP)
+if(VIPSTER_DESKTOP)
     # Qt-based desktop application
 
     # load and setup qt
@@ -84,6 +88,12 @@ if(DESKTOP)
          "vipster/common/*.cpp"
          "vipster/resources/vipster.qrc"
          )
+    if(NOT VIPSTER_LAMMPS)
+        file(GLOB LMP_SOURCES
+            "vipster/wraplammps.*"
+            "vipster/qt/tools/lammpswidget.*")
+        list(REMOVE_ITEM QT_SOURCES ${LMP_SOURCES})
+    endif()
 
     # icon-files:
     if(APPLE)
@@ -101,9 +111,23 @@ if(DESKTOP)
         install(FILES "dist/vipster.desktop" DESTINATION "share/applications")
         install(FILES "dist/vipster.appdata.xml" DESTINATION "share/metainfo")
     endif()
+
+    # lammps-interface
+    if(VIPSTER_LAMMPS)
+        add_definitions(-DVIPSTER_LAMMPS)
+        set(BUILD_EXE OFF CACHE BOOL "")
+        set(BUILD_LIB ON CACHE BOOL "")
+        set(BUILD_SHARED_LIBS ON CACHE BOOL "")
+        set(LAMMPS_EXCEPTIONS ON CACHE BOOL "")
+        set(BUILD_MPI ON CACHE BOOL "")
+        add_subdirectory(external/lammps/cmake)
+        find_package(MPI REQUIRED)
+        include_directories(${MPI_CXX_INCLUDE_PATH})
+        target_link_libraries(vipster ${MPI_CXX_LIBRARIES} lammps pthread)
+    endif()
 endif()
 
-if(WEB)
+if(VIPSTER_WEB)
     # Emscripten-based web application
 
     set(EMCC_LINKER_FLAGS "--bind -s USE_WEBGL2=1 -s WASM=1 -s DISABLE_EXCEPTION_CATCHING=0")
