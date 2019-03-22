@@ -1,14 +1,11 @@
 #include <QMessageBox>
 
 #include <thread>
-#include <mpi.h>
 
 #include "lammpswidget.h"
 #include "ui_lammpswidget.h"
 
 #include "step.h"
-
-#include "wraplammps.h"
 
 using namespace Vipster;
 
@@ -30,42 +27,114 @@ LammpsWidget::~LammpsWidget()
     delete ui;
 }
 
-void work(MPI_Comm comm)
+void LammpsWidget::sendCmd(const std::string& cmd)
+{
+    MPI_Status status;
+    // broadcast command to lammps-workers
+    auto len = cmd.size();
+    MPI_Bcast(&len, 1, MPI_INT, MPI_ROOT, intercomm);
+    MPI_Bcast((void*)cmd.c_str(), cmd.size(), MPI_CHAR, MPI_ROOT, intercomm);
+    // collect results
+    std::string errMsg{};
+    LMPResult results[size];
+    for(int i=0; i<size; ++i){
+        LMPResult tmp;
+        MPI_Recv(&tmp, 1, MPI_BYTE, MPI_ANY_SOURCE, 0, intercomm, &status);
+        results[status.MPI_SOURCE] = tmp;
+        if(tmp){
+            if(errMsg.empty()){
+                errMsg = std::string{"Error executing \""} + cmd + "\":\n\n";
+            }
+            int len;
+            MPI_Recv(&len, 1, MPI_INT, i, 1, intercomm, &status);
+            char *buf = new char[len+1];
+            buf[len] = '\0';
+            MPI_Recv(buf, len, MPI_CHAR, i, 1, intercomm, &status);
+            errMsg += "Error in process " + std::to_string(i) + ": " + buf;
+            delete[] buf;
+            if(tmp == LMPResult::ABORT){
+                // If lammps needs to be aborted, inform user that program state has become invalid
+                // and block widget for remainder of runtime
+                errMsg += "This error cannot be recovered.\n"
+                          "Restart Vipster to reenable the LAMMPS-Widget.";
+                QMessageBox msg{this};
+                msg.setText(QString::fromStdString(errMsg));
+                msg.exec();
+                throw(Error{"ABORT"});
+            }
+        }
+    }
+    // display error and throw so we exit the eval-loop
+    if(!errMsg.empty()){
+        QMessageBox msg{this};
+        msg.setText(QString::fromStdString(errMsg));
+        msg.exec();
+        throw(Error{"FAIL"});
+    }
+}
+
+void LammpsWidget::sendOp(LMPMessage op, const std::string& cmd)
+{
+    MPI_Bcast(&op, 1, MPI_UINT8_T, MPI_ROOT, intercomm);
+    switch(op){
+    case LMPMessage::CMD:
+        // transmit command
+        sendCmd(cmd);
+        break;
+    case LMPMessage::EXIT:
+        ui->runButton->setEnabled(true);
+        running = false;
+        size = -1;
+        return;
+    case LMPMessage::ABORT:
+        return;
+    }
+}
+
+void LammpsWidget::work()
 {
     int me;
-    MPI_Comm_rank(comm, &me);
+    MPI_Comm_rank(intercomm, &me);
     if(me){
         throw Error("Lammps-widget: Am not root of intercommunicator");
     }
-    std::vector<LMPMessage> messages{
-        LMPMessage::CMD,
-        LMPMessage::CMD,
-        LMPMessage::CMD,
-        LMPMessage::CMD,
-        LMPMessage::CMD,
-        LMPMessage::CMD,
-        LMPMessage::ABORT,
-    };
-    auto abort{LMPMessage::ABORT};
-    for(auto& msg: messages){
-        MPI_Bcast(&msg, 1, MPI_UINT8_T, MPI_ROOT, comm);
-        switch(msg){
-        case LMPMessage::CMD:
-            // TODO: transmitt message
-            break;
-        case LMPMessage::ABORT:
-            return;
-        default:
-            // should not arrive here, abort execution
-            MPI_Bcast(&abort, 1, MPI_UINT8_T, MPI_ROOT, comm);
-            break;
+    size_t total_steps, granularity, iterations, last_iter;
+    //TODO: these two shall be fed from gui
+    total_steps = 10000;
+    granularity = 10;
+    iterations = total_steps/granularity;
+    last_iter = total_steps%granularity;
+    std::string run, run_last;
+    run = "run " + std::to_string(granularity);
+    run_last = "run " + std::to_string(last_iter);
+    try{
+        for(auto& cmd: commands){
+            sendOp(LMPMessage::CMD, cmd);
+        }
+        for(size_t i=0; i<iterations; ++i){
+            sendOp(LMPMessage::CMD, run);
+        }
+        if(last_iter){
+            sendOp(LMPMessage::CMD, run_last);
+        }
+        sendOp(LMPMessage::EXIT, "");
+    }catch(const Error& e){
+        if(!strcmp(e.what(), "ABORT")){
+            sendOp(LMPMessage::ABORT, "");
+        }else{
+            sendOp(LMPMessage::EXIT, "");
         }
     }
 }
 
 void LammpsWidget::on_runButton_clicked()
 {
-    MPI_Comm intercomm;
+    //TODO: not working yet
+    // prevent double spawning if button is clicked multiple times before setDisabled is executed
+    if(running) return;
+    ui->runButton->setDisabled(true);
+    size = ui->nProc->value();
+    running = true;
     // prepare argv to launch in lammps-mode
     char **argv = new char*[2];
     argv[0] = "__LMP__";
@@ -79,7 +148,7 @@ void LammpsWidget::on_runButton_clicked()
     int spawned = MPI_Comm_spawn(
         QApplication::arguments()[0].toUtf8(), // relaunch this application
         argv, // given __LMP__ as argument, which will trigger the lammps-wrapping
-        ui->nProc->value(), // spawning this many processes
+        size, // spawning this many processes
         info, // don't use info
         0,  // am singleton, am root
         MPI_COMM_SELF, // spawning communicator
@@ -87,7 +156,7 @@ void LammpsWidget::on_runButton_clicked()
         MPI_ERRCODES_IGNORE); //ignore errors, return value should be enough
     if(!spawned){
         // this call should be threaded!
-        work(intercomm);
+        work();
     }else{
         QMessageBox msg{this};
         msg.setText("Failed to spawn LAMMPS processes.\n"
