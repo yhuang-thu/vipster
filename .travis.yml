@@ -54,5 +54,4 @@ deploy:
       draft: true
       on:
           tags: true
-          condition: $TARGET != web
-          condition: $TRAVIS_OS_NAME != windows
+          condition: $TARGET != web && $TRAVIS_OS_NAME != windows

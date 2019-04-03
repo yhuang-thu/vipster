@@ -34,10 +34,12 @@ int main(int argc, char *argv[])
 {
     // main parser + data-targets
     Vipster::readConfig();
+#ifdef VIPSTER_LAMMPS
     if(argc==2 && !strcmp(argv[1], "__LMP__")){
         launchLammps();
         return 0;
     }
+#endif
     CLI::App app{"Vipster v" VIPSTER_VERSION "b"};
     app.allow_extras(true);
     std::map<IOFmt, std::vector<std::string>> fmt_files{};

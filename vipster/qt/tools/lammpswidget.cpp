@@ -29,7 +29,6 @@ LammpsWidget::~LammpsWidget()
 
 void LammpsWidget::sendCmd(const std::string& cmd)
 {
-    MPI_Status status;
     // broadcast command to lammps-workers
     auto len = cmd.size();
     MPI_Bcast(&len, 1, MPI_INT, MPI_ROOT, intercomm);
@@ -38,18 +37,19 @@ void LammpsWidget::sendCmd(const std::string& cmd)
     std::string errMsg{};
     LMPResult results[size];
     for(int i=0; i<size; ++i){
+	MPI_Status status;
         LMPResult tmp;
         MPI_Recv(&tmp, 1, MPI_BYTE, MPI_ANY_SOURCE, 0, intercomm, &status);
         results[status.MPI_SOURCE] = tmp;
-        if(tmp){
+        if(tmp != LMPResult::SUCCESS){
             if(errMsg.empty()){
                 errMsg = std::string{"Error executing \""} + cmd + "\":\n\n";
             }
-            int len;
-            MPI_Recv(&len, 1, MPI_INT, i, 1, intercomm, &status);
+            uint64_t len;
+            MPI_Recv(&len, 1, MPI_UINT64_T, status.MPI_SOURCE, 1, intercomm, &status);
             char *buf = new char[len+1];
             buf[len] = '\0';
-            MPI_Recv(buf, len, MPI_CHAR, i, 1, intercomm, &status);
+            MPI_Recv(buf, len, MPI_CHAR, status.MPI_SOURCE, 1, intercomm, &status);
             errMsg += "Error in process " + std::to_string(i) + ": " + buf;
             delete[] buf;
             if(tmp == LMPResult::ABORT){
@@ -73,20 +73,28 @@ void LammpsWidget::sendCmd(const std::string& cmd)
     }
 }
 
+void LammpsWidget::sendAbort()
+{
+    for(int i=0; i<size; ++i){
+	uint8_t dummy{};
+	MPI_Send(&dummy, 1, MPI_UINT8_T, i, 2, intercomm);
+    }
+    MPI_Comm_disconnect(&intercomm);
+}
+
 void LammpsWidget::sendOp(LMPMessage op, const std::string& cmd)
 {
-    MPI_Bcast(&op, 1, MPI_UINT8_T, MPI_ROOT, intercomm);
     switch(op){
     case LMPMessage::CMD:
         // transmit command
+	MPI_Bcast(&op, 1, MPI_UINT8_T, MPI_ROOT, intercomm);
         sendCmd(cmd);
         break;
-    case LMPMessage::EXIT:
-        ui->runButton->setEnabled(true);
-        running = false;
-        size = -1;
-        return;
     case LMPMessage::ABORT:
+	sendAbort();
+	return;
+    case LMPMessage::EXIT:
+	MPI_Bcast(&op, 1, MPI_UINT8_T, MPI_ROOT, intercomm);
         return;
     }
 }
@@ -107,6 +115,16 @@ void LammpsWidget::work()
     std::string run, run_last;
     run = "run " + std::to_string(granularity);
     run_last = "run " + std::to_string(last_iter);
+    std::vector<std::string> commands{
+        "read_data bargl",
+    };
+       // "units real",
+       // "dimension 3",
+       // "newton on",
+       // "boundary p p p",
+       // "atom_style atomic",
+       // "",
+       // "#test comment",
     try{
         for(auto& cmd: commands){
             sendOp(LMPMessage::CMD, cmd);
@@ -149,14 +167,26 @@ void LammpsWidget::on_runButton_clicked()
         QApplication::arguments()[0].toUtf8(), // relaunch this application
         argv, // given __LMP__ as argument, which will trigger the lammps-wrapping
         size, // spawning this many processes
-        info, // don't use info
+        info, // allow for oversubscription
         0,  // am singleton, am root
         MPI_COMM_SELF, // spawning communicator
         &intercomm, // resulting intercommunicator
         MPI_ERRCODES_IGNORE); //ignore errors, return value should be enough
     if(!spawned){
+	// check if workers report success
+	LMPResult res;
+	MPI_Status status;
+        MPI_Recv(&res, 1, MPI_BYTE, MPI_ANY_SOURCE, 0, intercomm, &status);
+	if(res != LMPResult::SUCCESS){
+	    spawned = 1;
+	}
+    }
+    if(!spawned){
         // this call should be threaded!
         work();
+        ui->runButton->setEnabled(true);
+        running = false;
+        size = -1;
     }else{
         QMessageBox msg{this};
         msg.setText("Failed to spawn LAMMPS processes.\n"

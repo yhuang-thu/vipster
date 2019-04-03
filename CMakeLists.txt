@@ -89,7 +89,7 @@ if(VIPSTER_DESKTOP)
          "vipster/resources/vipster.qrc"
          )
     if(NOT VIPSTER_LAMMPS)
-        file(GLOB LMP_SOURCES
+        file(GLOB_RECURSE LMP_SOURCES
             "vipster/wraplammps.*"
             "vipster/qt/tools/lammpswidget.*")
         list(REMOVE_ITEM QT_SOURCES ${LMP_SOURCES})
