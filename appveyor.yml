@@ -10,7 +10,7 @@ build_script:
     - mkdir build
     - cd build
     - mv "C:\Program Files\Git\usr\bin\sh.exe" "C:\Program Files\Git\usr\bin\sh2.exe"
-    - cmake -D TESTS=YES -D DESKTOP=YES -D CMAKE_BUILD_TYPE=Release -D CMAKE_PREFIX_PATH="$MWDIR" -G "MinGW Makefiles" ..
+    - cmake -D VIPSTER_TESTS=YES -D VIPSTER_DESKTOP=YES -D CMAKE_BUILD_TYPE=Release -D CMAKE_PREFIX_PATH="$MWDIR" -G "MinGW Makefiles" ..
     - cmake --build .
 test_script:
     - test_lib.exe

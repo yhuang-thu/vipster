@@ -47,13 +47,13 @@ case $1 in
                     web)
                         mkdir build
                         cd build
-                        emcmake cmake -D WEB=YES -D CMAKE_BUILD_TYPE=Release $TRAVIS_BUILD_DIR
+                        emcmake cmake -D VIPSTER_DESKTOP=NO -D VIPSTER_WEB=YES -D CMAKE_BUILD_TYPE=Release $TRAVIS_BUILD_DIR
                         make -j2
                         ;;
                     desktop)
                         mkdir build
                         cd build
-                        cmake -D DESKTOP=YES -D PYTHON=YES -D TESTS=YES -D CMAKE_BUILD_TYPE=Debug $TRAVIS_BUILD_DIR
+                        cmake -D VIPSTER_DESKTOP=YES -D VIPSTER_PYTHON=YES -D VIPSTER_TESTS=YES -D CMAKE_BUILD_TYPE=Debug $TRAVIS_BUILD_DIR
                         make -j2
                         ./test_lib
                         ;;
@@ -62,7 +62,7 @@ case $1 in
             osx)
                 mkdir build
                 cd build
-                cmake -D CMAKE_PREFIX_PATH=/usr/local/opt/qt -D TESTS=YES -D DESKTOP=YES -D CMAKE_BUILD_TYPE=Release $TRAVIS_BUILD_DIR
+                cmake -D CMAKE_PREFIX_PATH=/usr/local/opt/qt -D VIPSTER_TESTS=YES -D VIPSTER_DESKTOP=YES -D CMAKE_BUILD_TYPE=Release $TRAVIS_BUILD_DIR
                 make -j2
                 ./test_lib
                 ;;
@@ -70,7 +70,7 @@ case $1 in
                 mkdir build
                 cd build
                 mv "C:\Program Files\Git\usr\bin\sh.exe" "C:\Program Files\Git\usr\bin\sh2.exe"
-                cmake -D TESTS=YES -D DESKTOP=YES -D CMAKE_PREFIX_PATH="$QTDIR;$MWDIR" -G "MinGW Makefiles" -D CMAKE_BUILD_TYPE=RELEASE ..
+                cmake -D VIPSTER_TESTS=YES -D VIPSTER_DESKTOP=YES -D CMAKE_PREFIX_PATH="$QTDIR;$MWDIR" -G "MinGW Makefiles" -D CMAKE_BUILD_TYPE=RELEASE ..
                 cmake --build .
                 ./test_lib.exe
                 ;;
@@ -97,7 +97,7 @@ case $1 in
                         cd $TRAVIS_BUILD_DIR
                         mkdir release
                         cd release
-                        cmake -D DESKTOP=YES -D CMAKE_BUILD_TYPE=Release -D CMAKE_INSTALL_PREFIX=/usr $TRAVIS_BUILD_DIR
+                        cmake -D VIPSTER_DESKTOP=YES -D CMAKE_BUILD_TYPE=Release -D CMAKE_INSTALL_PREFIX=/usr $TRAVIS_BUILD_DIR
                         make DESTDIR=AppDir install -j2
                         # fill AppDir with dependencies
                         wget -c "https://github.com/probonopd/linuxdeployqt/releases/download/5/linuxdeployqt-5-x86_64.AppImage" -O linuxdeployqt

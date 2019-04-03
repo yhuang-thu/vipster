@@ -53,7 +53,7 @@ endif()
 
 if(VIPSTER_PYTHON)
     # Python-bindings
-    find_package(pybind11 CONFIG REQUIRED)
+    find_package(pybind11 CONFIG)
     if(NOT pybind11_FOUND)
         add_subdirectory(external/pybind11)
     endif()
