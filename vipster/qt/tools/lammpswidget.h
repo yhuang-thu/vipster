@@ -26,7 +26,7 @@ private:
     void work();
     void sendCmd(const std::string& cmd);
     void sendAbort();
-    void sendOp(LMPMessage op, const std::string& cmd);
+    void sendOp(LMPMessage op, const std::string& cmd="");
     bool running{false};
     int size{-1};
     MPI_Comm intercomm;

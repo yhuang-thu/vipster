@@ -9,6 +9,16 @@
 
 using namespace Vipster;
 
+class ExitError:public std::runtime_error{
+public:
+    ExitError(std::string error):std::runtime_error(error){}
+};
+
+class AbortError:public std::runtime_error{
+public:
+    AbortError(std::string error):std::runtime_error(error){}
+};
+
 LammpsWidget::LammpsWidget(QWidget *parent) :
     BaseWidget(parent),
     ui(new Ui::LammpsWidget)
@@ -53,23 +63,13 @@ void LammpsWidget::sendCmd(const std::string& cmd)
             errMsg += "Error in process " + std::to_string(i) + ": " + buf;
             delete[] buf;
             if(tmp == LMPResult::ABORT){
-                // If lammps needs to be aborted, inform user that program state has become invalid
-                // and block widget for remainder of runtime
-                errMsg += "This error cannot be recovered.\n"
-                          "Restart Vipster to reenable the LAMMPS-Widget.";
-                QMessageBox msg{this};
-                msg.setText(QString::fromStdString(errMsg));
-                msg.exec();
-                throw(Error{"ABORT"});
+		throw(AbortError{errMsg});
             }
         }
     }
     // display error and throw so we exit the eval-loop
     if(!errMsg.empty()){
-        QMessageBox msg{this};
-        msg.setText(QString::fromStdString(errMsg));
-        msg.exec();
-        throw(Error{"FAIL"});
+	throw(ExitError(errMsg));
     }
 }
 
@@ -106,42 +106,35 @@ void LammpsWidget::work()
     if(me){
         throw Error("Lammps-widget: Am not root of intercommunicator");
     }
-    size_t total_steps, granularity, iterations, last_iter;
-    //TODO: these two shall be fed from gui
-    total_steps = 10000;
-    granularity = 10;
-    iterations = total_steps/granularity;
-    last_iter = total_steps%granularity;
+    auto total_steps = ui->nStep->value();
+    auto granularity = ui->granularity->value();
+    auto iterations = total_steps/granularity;
+    auto last_iter = total_steps%granularity;
     std::string run, run_last;
     run = "run " + std::to_string(granularity);
     run_last = "run " + std::to_string(last_iter);
-    std::vector<std::string> commands{
-        "read_data bargl",
-    };
-       // "units real",
-       // "dimension 3",
-       // "newton on",
-       // "boundary p p p",
-       // "atom_style atomic",
-       // "",
-       // "#test comment",
     try{
-        for(auto& cmd: commands){
-            sendOp(LMPMessage::CMD, cmd);
-        }
+	auto script = ui->scriptInput->toPlainText().split('\n');
+	for(const auto& cmd: script){
+	    sendOp(LMPMessage::CMD, cmd.toStdString());
+	}
         for(size_t i=0; i<iterations; ++i){
             sendOp(LMPMessage::CMD, run);
         }
         if(last_iter){
             sendOp(LMPMessage::CMD, run_last);
         }
-        sendOp(LMPMessage::EXIT, "");
-    }catch(const Error& e){
-        if(!strcmp(e.what(), "ABORT")){
-            sendOp(LMPMessage::ABORT, "");
-        }else{
-            sendOp(LMPMessage::EXIT, "");
-        }
+        sendOp(LMPMessage::EXIT);
+    }catch(const AbortError& e){
+	sendOp(LMPMessage::ABORT);
+	QMessageBox msg{this};
+	msg.setText(e.what());
+	msg.exec();
+    }catch(const ExitError& e){
+	sendOp(LMPMessage::EXIT);
+	QMessageBox msg{this};
+	msg.setText(e.what());
+	msg.exec();
     }
 }
 
